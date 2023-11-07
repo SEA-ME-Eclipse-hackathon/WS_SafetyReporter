@@ -19,13 +19,14 @@ import json
 import logging
 import signal
 
+from SafetyChecker import SafetyChecker
 from vehicle import Vehicle, vehicle  # type: ignore
 from velocitas_sdk.util.log import (  # type: ignore
     get_opentelemetry_log_factory,
     get_opentelemetry_log_format,
 )
 from velocitas_sdk.vdb.reply import DataPointReply
-from velocitas_sdk.vehicle_app import VehicleApp, subscribe_topic
+from velocitas_sdk.vehicle_app import VehicleApp, subscribe_data_points
 
 # Configure the VehicleApp logger with the necessary log config and level.
 logging.setLogRecordFactory(get_opentelemetry_log_factory())
@@ -33,91 +34,69 @@ logging.basicConfig(format=get_opentelemetry_log_format())
 logging.getLogger().setLevel("DEBUG")
 logger = logging.getLogger(__name__)
 
-GET_SPEED_REQUEST_TOPIC = "sampleapp/getSpeed"
-GET_SPEED_RESPONSE_TOPIC = "sampleapp/getSpeed/response"
-DATABROKER_SUBSCRIPTION_TOPIC = "sampleapp/currentSpeed"
+SAFETY_FATAL_TOPIC = "safety/fatal"
+LOGGER_LOG_TOPIC = "loggerapp/log"
 
 
-class SampleApp(VehicleApp):
-    """
-    Sample skeleton vehicle app.
-
-    The skeleton subscribes to a getSpeed MQTT topic
-    to listen for incoming requests to get
-    the current vehicle speed and publishes it to
-    a response topic.
-
-    It also subcribes to the VehicleDataBroker
-    directly for updates of the
-    Vehicle.Speed signal and publishes this
-    information via another specific MQTT topic
-    """
+class SafetyReporterApp(VehicleApp):
+    """ """
 
     def __init__(self, vehicle_client: Vehicle):
-        # SampleApp inherits from VehicleApp.
+        # SafetyReporterApp inherits from VehicleApp.
         super().__init__()
         self.Vehicle = vehicle_client
+        self.SafetyChecker = SafetyChecker()
 
     async def on_start(self):
         """Run when the vehicle app starts"""
-        # This method will be called by the SDK when the connection to the
-        # Vehicle DataBroker is ready.
-        # Here you can subscribe for the Vehicle Signals update (e.g. Vehicle Speed).
-        await self.Vehicle.Speed.subscribe(self.on_speed_change)
 
+    @subscribe_data_points("Vehicle.Speed")
     async def on_speed_change(self, data: DataPointReply):
-        """The on_speed_change callback, this will be executed when receiving a new
-        vehicle signal updates."""
-        # Get the current vehicle speed value from the received DatapointReply.
-        # The DatapointReply containes the values of all subscribed DataPoints of
-        # the same callback.
-        vehicle_speed = data.get(self.Vehicle.Speed).value
+        speed = data.get(self.Vehicle.Speed).value
+        if self.SafetyChecker.is_speed_safe(speed) is False:
+            await self.publish_event(
+                SAFETY_FATAL_TOPIC, json.dumps({"cause": "speed drops dramatically"})
+            )
 
-        # Do anything with the received value.
-        # Example:
-        # - Publishes current speed to MQTT Topic (i.e. DATABROKER_SUBSCRIPTION_TOPIC).
+    @subscribe_data_points(
+        """Vehicle.Cabin.Seat.Row1.Pos1.Airbag.IsDeployed,
+        Vehicle.Cabin.Seat.Row1.Pos2.Airbag.IsDeployed,
+        Vehicle.Cabin.Seat.Row1.Pos3.Airbag.IsDeployed,
+        Vehicle.Cabin.Seat.Row2.Pos1.Airbag.IsDeployed,
+        Vehicle.Cabin.Seat.Row2.Pos2.Airbag.IsDeployed,
+        Vehicle.Cabin.Seat.Row2.Pos3.Airbag.IsDeployed
+        """,
+        """Vehicle.Cabin.Seat.Row1.Pos1.Airbag.IsDeployed == true OR
+        Vehicle.Cabin.Seat.Row1.Pos2.Airbag.IsDeployed == true OR
+        Vehicle.Cabin.Seat.Row1.Pos3.Airbag.IsDeployed == true OR
+        Vehicle.Cabin.Seat.Row2.Pos1.Airbag.IsDeployed == true OR
+        Vehicle.Cabin.Seat.Row2.Pos2.Airbag.IsDeployed == true OR
+        Vehicle.Cabin.Seat.Row2.Pos3.Airbag.IsDeployed == true
+        """,
+    )
+    async def on_airbag_trigger(self, data: DataPointReply):
+        r1p1 = data.get(self.Vehicle.Cabin.Seat.Row1.Pos1.Airbag.IsDeployed).value
+        r1p2 = data.get(self.Vehicle.Cabin.Seat.Row1.Pos2.Airbag.IsDeployed).value
+        r1p3 = data.get(self.Vehicle.Cabin.Seat.Row1.Pos3.Airbag.IsDeployed).value
+        r2p1 = data.get(self.Vehicle.Cabin.Seat.Row2.Pos1.Airbag.IsDeployed).value
+        r2p2 = data.get(self.Vehicle.Cabin.Seat.Row2.Pos2.Airbag.IsDeployed).value
+        r2p3 = data.get(self.Vehicle.Cabin.Seat.Row2.Pos3.Airbag.IsDeployed).value
+
         await self.publish_event(
-            DATABROKER_SUBSCRIPTION_TOPIC,
-            json.dumps({"speed": vehicle_speed}),
+            LOGGER_LOG_TOPIC,
+            f"""airbag triggered : r1p1: ${r1p1} r1p2: ${r1p2} r1p1: ${r1p3} \
+r2p1: ${r2p1} r2p2: ${r2p2} r2p3: ${r2p3}""",
         )
-
-    @subscribe_topic(GET_SPEED_REQUEST_TOPIC)
-    async def on_get_speed_request_received(self, data: str) -> None:
-        """The subscribe_topic annotation is used to subscribe for incoming
-        PubSub events, e.g. MQTT event for GET_SPEED_REQUEST_TOPIC.
-        """
-
-        # Use the logger with the preferred log level (e.g. debug, info, error, etc)
-        logger.debug(
-            "PubSub event for the Topic: %s -> is received with the data: %s",
-            GET_SPEED_REQUEST_TOPIC,
-            data,
-        )
-
-        # Getting current speed from VehicleDataBroker using the DataPoint getter.
-        vehicle_speed = (await self.Vehicle.Speed.get()).value
-
-        # Do anything with the speed value.
-        # Example:
-        # - Publishes the vehicle speed to MQTT topic (i.e. GET_SPEED_RESPONSE_TOPIC).
         await self.publish_event(
-            GET_SPEED_RESPONSE_TOPIC,
-            json.dumps(
-                {
-                    "result": {
-                        "status": 0,
-                        "message": f"""Current Speed = {vehicle_speed}""",
-                    },
-                }
-            ),
+            SAFETY_FATAL_TOPIC, json.dumps({"cause": "airbag triggered"})
         )
 
 
 async def main():
     """Main function"""
-    logger.info("Starting SampleApp...")
-    # Constructing SampleApp and running it.
-    vehicle_app = SampleApp(vehicle)
+    logger.info("Starting SafetyReporterApp...")
+    # Constructing SafetyReporterApp and running it.
+    vehicle_app = SafetyReporterApp(vehicle)
     await vehicle_app.run()
 
 

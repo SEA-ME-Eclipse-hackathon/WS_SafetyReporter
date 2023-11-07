@@ -1,6 +1,6 @@
 {
     "manifestVersion": "v3",
-    "name": "SampleApp",
+    "name": "SafetyReporterApp",
     "interfaces": [
         {
             "type": "vehicle-signal-interface",
@@ -11,6 +11,30 @@
                         {
                             "path": "Vehicle.Speed",
                             "access": "read"
+                        },
+                        {
+                            "path": "Vehicle.Cabin.Seat.Row1.Pos1.Airbag.IsDeployed",
+                            "access": "read"
+                        },
+                        {
+                            "path": "Vehicle.Cabin.Seat.Row1.Pos2.Airbag.IsDeployed",
+                            "access": "read"
+                        },
+                        {
+                            "path": "Vehicle.Cabin.Seat.Row1.Pos3.Airbag.IsDeployed",
+                            "access": "read"
+                        },
+                        {
+                            "path": "Vehicle.Cabin.Seat.Row2.Pos1.Airbag.IsDeployed",
+                            "access": "read"
+                        },
+                        {
+                            "path": "Vehicle.Cabin.Seat.Row2.Pos2.Airbag.IsDeployed",
+                            "access": "read"
+                        },
+                        {
+                            "path": "Vehicle.Cabin.Seat.Row2.Pos3.Airbag.IsDeployed",
+                            "access": "read"
                         }
                     ]
                 }
@@ -19,12 +43,10 @@
         {
             "type": "pubsub",
             "config": {
-                "reads": [
-                    "sampleapp/getSpeed"
-                ],
+                "reads": [],
                 "writes": [
-                    "sampleapp/getSpeed/response",
-                    "sampleapp/currentSpeed"
+                    "safety/fatal",
+                    "loggerapp/log"
                 ]
             }
         }
