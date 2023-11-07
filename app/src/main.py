@@ -65,14 +65,7 @@ class SafetyReporterApp(VehicleApp):
         Vehicle.Cabin.Seat.Row2.Pos1.Airbag.IsDeployed,
         Vehicle.Cabin.Seat.Row2.Pos2.Airbag.IsDeployed,
         Vehicle.Cabin.Seat.Row2.Pos3.Airbag.IsDeployed
-        """,
-        """Vehicle.Cabin.Seat.Row1.Pos1.Airbag.IsDeployed == true OR
-        Vehicle.Cabin.Seat.Row1.Pos2.Airbag.IsDeployed == true OR
-        Vehicle.Cabin.Seat.Row1.Pos3.Airbag.IsDeployed == true OR
-        Vehicle.Cabin.Seat.Row2.Pos1.Airbag.IsDeployed == true OR
-        Vehicle.Cabin.Seat.Row2.Pos2.Airbag.IsDeployed == true OR
-        Vehicle.Cabin.Seat.Row2.Pos3.Airbag.IsDeployed == true
-        """,
+        """
     )
     async def on_airbag_trigger(self, data: DataPointReply):
         r1p1 = data.get(self.Vehicle.Cabin.Seat.Row1.Pos1.Airbag.IsDeployed).value
@@ -82,14 +75,15 @@ class SafetyReporterApp(VehicleApp):
         r2p2 = data.get(self.Vehicle.Cabin.Seat.Row2.Pos2.Airbag.IsDeployed).value
         r2p3 = data.get(self.Vehicle.Cabin.Seat.Row2.Pos3.Airbag.IsDeployed).value
 
-        await self.publish_event(
-            LOGGER_LOG_TOPIC,
-            f"""airbag triggered : r1p1: ${r1p1} r1p2: ${r1p2} r1p1: ${r1p3} \
-r2p1: ${r2p1} r2p2: ${r2p2} r2p3: ${r2p3}""",
-        )
-        await self.publish_event(
-            SAFETY_FATAL_TOPIC, json.dumps({"cause": "airbag triggered"})
-        )
+        if r1p1 or r1p2 or r1p3 or r2p1 or r2p2 or r2p3:
+            await self.publish_event(
+                LOGGER_LOG_TOPIC,
+                f"""airbag triggered : r1p1: ${r1p1} r1p2: ${r1p2} r1p1: ${r1p3} \
+    r2p1: ${r2p1} r2p2: ${r2p2} r2p3: ${r2p3}""",
+            )
+            await self.publish_event(
+                SAFETY_FATAL_TOPIC, json.dumps({"cause": "airbag triggered"})
+            )
 
 
 async def main():
